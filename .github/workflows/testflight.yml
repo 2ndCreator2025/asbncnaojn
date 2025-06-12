@@ -92,20 +92,7 @@ jobs:
               echo "     ⚠️ Format: Should be UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
             fi
           fi
-          
-          if [ -z "${{ secrets.TEAM_ID }}" ]; then
-            echo "  ❌ TEAM_ID: Missing"
-            MISSING_SECRETS+=("TEAM_ID")
-          else
-            TEAM_ID_LENGTH=${#{{ secrets.TEAM_ID }}}
-            echo "  ✅ TEAM_ID: Present ($TEAM_ID_LENGTH chars)"
-            if [ $TEAM_ID_LENGTH -eq 10 ]; then
-              echo "     📏 Length: Correct (10 characters)"
-            else
-              echo "     ⚠️ Length: Expected 10 characters, got $TEAM_ID_LENGTH"
-            fi
-          fi
-          
+        
           if [ -z "${{ secrets.APP_ID }}" ]; then
             echo "  ❌ APP_ID: Missing"
             MISSING_SECRETS+=("APP_ID")
@@ -244,6 +231,23 @@ jobs:
             exit 1
           fi
 
+      - name: 🎯 Generate JWT Token & Get Team ID
+        run: |
+          cd cli
+          dart pub get
+          cd ..
+          
+          # Generate JWT token using Dart CLI
+          JWT=$(dart run ./cli/bin/cli.dart "${{ secrets.API_KEY_ID }}" "${{ secrets.ISSUER_ID }}" "private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8")
+          echo "JWT_TOKEN=${JWT}" >> $GITHUB_ENV
+          
+          # Get Team ID from App Store Connect API
+          TEAM_RESPONSE=$(curl -s -H "Authorization: Bearer ${JWT}" "https://api.appstoreconnect.apple.com/v1/bundleIds")
+          TEAM_ID=$(echo "${TEAM_RESPONSE}" | jq -r '.data[0].attributes.seedId')
+          echo "TEAM_ID=${TEAM_ID}" >> $GITHUB_ENV
+          
+          echo "Successfully fetched Team ID: ${TEAM_ID}"
+
       - name: 📦 Install Flutter & iOS Dependencies
         run: |
           flutter pub get
@@ -284,23 +288,6 @@ jobs:
             clean archive
           echo "✅ iOS app archived successfully."
 
-      - name: 🎯 Generate JWT Token & Get Team ID
-        run: |
-          cd cli
-          dart pub get
-          cd ..
-          
-          # Generate JWT token using Dart CLI
-          JWT=$(dart run ./cli/bin/cli.dart "${{ secrets.API_KEY_ID }}" "${{ secrets.ISSUER_ID }}" "private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8")
-          echo "JWT_TOKEN=${JWT}" >> $GITHUB_ENV
-          
-          # Get Team ID from App Store Connect API
-          TEAM_RESPONSE=$(curl -s -H "Authorization: Bearer ${JWT}" "https://api.appstoreconnect.apple.com/v1/bundleIds")
-          TEAM_ID=$(echo "${TEAM_RESPONSE}" | jq -r '.data[0].attributes.seedId')
-          echo "TEAM_ID=${TEAM_ID}" >> $GITHUB_ENV
-          
-          echo "Successfully fetched Team ID: ${TEAM_ID}"
-
       - name: 📤 Export IPA
         run: |
           AUTH_KEY_PATH="$PWD/private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8"
@@ -314,7 +301,7 @@ jobs:
               <key>method</key>
               <string>app-store</string>
               <key>teamID</key>
-              <string>${{ secrets.TEAM_ID }}</string>
+              <string>${{ env.TEAM_ID }}</string>
               <key>uploadBitcode</key>
               <false/>
               <key>uploadSymbols</key>
