@@ -91,6 +91,11 @@ jobs:
       - name: 📱 Verify iOS Project Structure
         run: |
           echo "🔍 Verifying Flutter iOS project structure..."
+
+          echo "🍎 Installing iOS dependencies..."
+          cd ios
+          pod install --repo-update
+          cd ..
           
           if [ ! -d "ios" ]; then
             echo "❌ iOS directory not found. This doesn't appear to be a Flutter project."
@@ -192,10 +197,6 @@ jobs:
           echo "📦 Installing Flutter dependencies..."
           flutter pub get
           
-          echo "🍎 Installing iOS dependencies..."
-          cd ios
-          pod install --repo-update
-          cd ..
           
           echo "✅ Dependencies installed successfully"
 
