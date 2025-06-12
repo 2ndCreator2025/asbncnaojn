@@ -21,7 +21,7 @@ on:
           - staging
 
 env:
-  FLUTTER_VERSION: '3.19.0' # Adjust as needed
+  FLUTTER_VERSION: '3.32.3' # Adjust as needed
   XCODE_VERSION: '15.2'    # Adjust as needed
 
 jobs:
@@ -134,7 +134,7 @@ jobs:
           </dict>
           </plist>
           EOF
-          
+
           # Export IPA
           xcodebuild \
             -exportArchive \
