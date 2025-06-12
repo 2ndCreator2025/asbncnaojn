@@ -58,9 +58,11 @@ jobs:
             echo "  ❌ APPLE_API_PRIVATE_KEY: Missing"
             MISSING_SECRETS+=("APPLE_API_PRIVATE_KEY")
           else
-            echo "  ✅ APPLE_API_PRIVATE_KEY: Present (${#{{ secrets.APPLE_API_PRIVATE_KEY }}} chars)"
+            PRIVATE_KEY_VALUE="${{ secrets.APPLE_API_PRIVATE_KEY }}"
+            PRIVATE_KEY_LENGTH=${#PRIVATE_KEY_VALUE}
+            echo "  ✅ APPLE_API_PRIVATE_KEY: Present ($PRIVATE_KEY_LENGTH chars)"
             # Check if it looks like a valid private key
-            if [[ "${{ secrets.APPLE_API_PRIVATE_KEY }}" == *"BEGIN PRIVATE KEY"* ]]; then
+            if [[ "$PRIVATE_KEY_VALUE" == *"BEGIN PRIVATE KEY"* ]]; then
               echo "     🔑 Format: Valid private key detected"
             else
               echo "     ⚠️ Format: May not be a valid private key"
@@ -71,7 +73,8 @@ jobs:
             echo "  ❌ API_KEY_ID: Missing"
             MISSING_SECRETS+=("API_KEY_ID")
           else
-            KEY_ID_LENGTH=${#{{ secrets.API_KEY_ID }}}
+            API_KEY_VALUE="${{ secrets.API_KEY_ID }}"
+            KEY_ID_LENGTH=${#API_KEY_VALUE}
             echo "  ✅ API_KEY_ID: Present ($KEY_ID_LENGTH chars)"
             if [ $KEY_ID_LENGTH -eq 10 ]; then
               echo "     📏 Length: Correct (10 characters)"
@@ -84,15 +87,30 @@ jobs:
             echo "  ❌ ISSUER_ID: Missing"
             MISSING_SECRETS+=("ISSUER_ID")
           else
-            ISSUER_LENGTH=${#{{ secrets.ISSUER_ID }}}
+            ISSUER_VALUE="${{ secrets.ISSUER_ID }}"
+            ISSUER_LENGTH=${#ISSUER_VALUE}
             echo "  ✅ ISSUER_ID: Present ($ISSUER_LENGTH chars)"
-            if [[ "${{ secrets.ISSUER_ID }}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            if [[ "$ISSUER_VALUE" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
               echo "     🆔 Format: Valid UUID format"
             else
               echo "     ⚠️ Format: Should be UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
             fi
           fi
-        
+          
+          if [ -z "${{ secrets.TEAM_ID }}" ]; then
+            echo "  ❌ TEAM_ID: Missing"
+            MISSING_SECRETS+=("TEAM_ID")
+          else
+            TEAM_VALUE="${{ secrets.TEAM_ID }}"
+            TEAM_ID_LENGTH=${#TEAM_VALUE}
+            echo "  ✅ TEAM_ID: Present ($TEAM_ID_LENGTH chars)"
+            if [ $TEAM_ID_LENGTH -eq 10 ]; then
+              echo "     📏 Length: Correct (10 characters)"
+            else
+              echo "     ⚠️ Length: Expected 10 characters, got $TEAM_ID_LENGTH"
+            fi
+          fi
+          
           if [ -z "${{ secrets.APP_ID }}" ]; then
             echo "  ❌ APP_ID: Missing"
             MISSING_SECRETS+=("APP_ID")
