@@ -1,0 +1,8 @@
+app_identifier("com.example.flutterTestflightApp") # The bundle identifier of your app
+# apple_id("your_apple_id@example.com") # Your Apple Developer Portal username
+
+# Update the apple_id above with your Apple Developer account email
+# The app_identifier matches your iOS app's bundle identifier
+
+# For more information about the Appfile, see:
+#     https://docs.fastlane.tools/advanced/#appfile

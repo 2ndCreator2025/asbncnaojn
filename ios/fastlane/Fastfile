@@ -1,0 +1,118 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    # Build the Flutter app
+    sh "cd ../../ && flutter build ios --release --no-codesign"
+    
+    # Enable automatic code signing
+    update_code_signing_settings(
+      use_automatic_signing: true,
+      path: "Runner.xcodeproj"
+    )
+    
+    # Build and archive the iOS app
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../build/ios/ipa",
+      output_name: "Runner.ipa",
+      export_options: {
+        method: "app-store",
+        uploadBitcode: false,
+        compileBitcode: false,
+        uploadSymbols: true,
+        manageAppVersionAndBuildNumber: false
+      }
+    )
+    
+    # Upload to TestFlight
+    upload_to_testflight(
+      api_key_path: "../api_key.json",
+      skip_waiting_for_build_processing: true
+    )
+  end
+  
+  desc "Setup certificates and provisioning profiles using match"
+  lane :certificates do
+    match(
+      type: "appstore",
+      readonly: true
+    )
+  end
+  
+  desc "Build only (no upload)"
+  lane :build_only do
+    # Build the Flutter app
+    sh "cd ../../ && flutter build ios --release --no-codesign"
+    
+    # Enable automatic code signing
+    update_code_signing_settings(
+      use_automatic_signing: true,
+      path: "Runner.xcodeproj"
+    )
+    
+    # Build and archive the iOS app
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../build/ios/ipa",
+      output_name: "Runner.ipa",
+      export_options: {
+        method: "app-store",
+        uploadBitcode: false,
+        compileBitcode: false,
+        uploadSymbols: true,
+        manageAppVersionAndBuildNumber: false
+      }
+    )
+  end
+  
+  desc "Build with manual code signing (requires provisioning profiles)"
+  lane :beta_manual do
+    # Build the Flutter app
+    sh "cd ../../ && flutter build ios --release --no-codesign"
+    
+    # Setup certificates with match (if configured)
+    match(
+      type: "appstore",
+      readonly: true
+    )
+    
+    # Build and archive the iOS app
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../build/ios/ipa",
+      output_name: "Runner.ipa"
+    )
+    
+    # Upload to TestFlight
+    upload_to_testflight(
+      api_key_path: "../api_key.json",
+      skip_waiting_for_build_processing: true
+    )
+  end
+end
