@@ -96,7 +96,20 @@ jobs:
               echo "     ⚠️ Format: Should be UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
             fi
           fi
-        
+          
+          if [ -z "${{ secrets.TEAM_ID }}" ]; then
+            echo "  ❌ TEAM_ID: Missing"
+            MISSING_SECRETS+=("TEAM_ID")
+          else
+            TEAM_VALUE="${{ secrets.TEAM_ID }}"
+            TEAM_ID_LENGTH=${#TEAM_VALUE}
+            echo "  ✅ TEAM_ID: Present ($TEAM_ID_LENGTH chars)"
+            if [ $TEAM_ID_LENGTH -eq 10 ]; then
+              echo "     📏 Length: Correct (10 characters)"
+            else
+              echo "     ⚠️ Length: Expected 10 characters, got $TEAM_ID_LENGTH"
+            fi
+          fi
           
           if [ -z "${{ secrets.APP_ID }}" ]; then
             echo "  ❌ APP_ID: Missing"
@@ -223,15 +236,52 @@ jobs:
 
           # Create private_keys directory and .p8 file
           mkdir -p private_keys
-          # Convert \n to actual newlines and create the key file
-          echo "${{ secrets.APPLE_API_PRIVATE_KEY }}" | sed 's/\\n/\n/g' > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          
+          # Process the private key with multiple methods to ensure proper format
+          PRIVATE_KEY="${{ secrets.APPLE_API_PRIVATE_KEY }}"
+          echo "🔍 Processing private key (length: ${#PRIVATE_KEY} chars)..."
+          
+          # Method 1: Direct echo with printf to handle \n correctly
+          printf '%s\n' "$PRIVATE_KEY" | sed 's/\\n/\n/g' > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          
+          # Set proper permissions
           chmod 600 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          
+          # Debug: Show first and last lines
+          echo "🔍 First line of key file:"
+          head -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          echo "🔍 Last line of key file:"
+          tail -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          echo "🔍 Total lines in key file: $(wc -l < private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8)"
           
           # Verify the key file format
           if head -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 | grep -q "BEGIN PRIVATE KEY"; then
-            echo "✅ Apple API key file created and verified."
+            echo "✅ Private key header detected"
           else
-            echo "❌ Invalid API key format. Please check your private key."
+            echo "❌ Missing private key header"
+            echo "🔍 Full key file content:"
+            cat private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+            echo "❌ Trying alternative processing method..."
+            
+            # Method 2: Use base64 decode if the key was base64 encoded
+            if echo "$PRIVATE_KEY" | base64 -d > /tmp/test_key 2>/dev/null && head -1 /tmp/test_key | grep -q "BEGIN PRIVATE KEY"; then
+              echo "🔄 Key appears to be base64 encoded, decoding..."
+              echo "$PRIVATE_KEY" | base64 -d > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+              chmod 600 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+            else
+              echo "❌ Key is not valid base64 either"
+              exit 1
+            fi
+            rm -f /tmp/test_key
+          fi
+          
+          # Final verification
+          if head -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 | grep -q "BEGIN PRIVATE KEY" && \
+             tail -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 | grep -q "END PRIVATE KEY"; then
+            echo "✅ Apple API key file created and verified successfully."
+          else
+            echo "❌ Final verification failed. Key file does not have proper BEGIN/END markers."
+            echo "🔍 Key file content:"
             cat private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
             exit 1
           fi
