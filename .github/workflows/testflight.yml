@@ -1,12 +1,10 @@
-name: 🍎 TestFlight Deployment
+name: 🚀 TestFlight iOS Deploy
 
 on:
   push:
     branches:
       - main
       - master
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       build_number:
@@ -23,17 +21,17 @@ on:
           - staging
 
 env:
-  FLUTTER_VERSION: '3.32.1'
-  XCODE_VERSION: '15.2'
+  FLUTTER_VERSION: '3.19.0' # Adjust as needed
+  XCODE_VERSION: '15.2'    # Adjust as needed
 
 jobs:
   testflight-deploy:
-    name: 🚀 Deploy to TestFlight
+    name: Build & Upload to TestFlight
     runs-on: macos-14
     timeout-minutes: 60
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -43,214 +41,60 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: 🐦 Setup Flutter
+      - name: 🐦 Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
           cache-key: flutter-${{ env.FLUTTER_VERSION }}
 
-      - name: 📦 Flutter Doctor
-        run: |
-          flutter doctor -v
-          flutter --version
+      - name: 🔎 Run Flutter Doctor
+        run: flutter doctor -v
 
-      - name: 🔑 Validate Required Secrets
+      - name: 🔑 Validate & Prepare Apple API Key
         run: |
-          echo "🔍 Validating GitHub secrets..."
-          
-          # Check if all required secrets exist
-          if [ -z "${{ secrets.APPLE_API_PRIVATE_KEY }}" ]; then
-            echo "❌ APPLE_API_PRIVATE_KEY secret is missing"
+          # Check for essential secrets
+          if [ -z "${{ secrets.APPLE_API_PRIVATE_KEY }}" ] || \
+             [ -z "${{ secrets.API_KEY_ID }}" ] || \
+             [ -z "${{ secrets.ISSUER_ID }}" ] || \
+             [ -z "${{ secrets.APP_ID }}" ]; then
+            echo "❌ One or more required secrets are missing. Please check your repository secrets."
             exit 1
           fi
-          
-          if [ -z "${{ secrets.API_KEY_ID }}" ]; then
-            echo "❌ API_KEY_ID secret is missing"
-            exit 1
-          fi
-          
-          if [ -z "${{ secrets.ISSUER_ID }}" ]; then
-            echo "❌ ISSUER_ID secret is missing"
-            exit 1
-          fi
-          
-          if [ -z "${{ secrets.APP_ID }}" ]; then
-            echo "❌ APP_ID secret is missing"
-            exit 1
-          fi
-          
-          echo "✅ All required secrets are present"
-          
-          # Display key information (masked)
-          echo "📋 Configuration:"
-          echo "API Key ID: ${{ secrets.API_KEY_ID }}"
-          echo "Issuer ID: ${{ secrets.ISSUER_ID }}"
-          echo "App ID: ${{ secrets.APP_ID }}"
+          echo "✅ All required secrets are present."
 
-      - name: 📱 Verify iOS Project Structure
-        run: |
-          echo "🔍 Verifying Flutter iOS project structure..."
-
-          echo "🍎 Installing iOS dependencies..."
-          cd ios
-          pod install --repo-update
-          cd ..
-          
-          if [ ! -d "ios" ]; then
-            echo "❌ iOS directory not found. This doesn't appear to be a Flutter project."
-            exit 1
-          fi
-          
-          if [ ! -f "ios/Runner.xcworkspace" ] && [ ! -f "ios/Runner.xcodeproj" ]; then
-            echo "❌ No iOS workspace or project found"
-            exit 1
-          fi
-          
-          if [ ! -f "ios/Runner/Info.plist" ]; then
-            echo "❌ Info.plist not found"
-            exit 1
-          fi
-          
-          # Check bundle identifier
-          BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw ios/Runner/Info.plist 2>/dev/null || echo "unknown")
-          echo "📱 Bundle ID: $BUNDLE_ID"
-          
-          if [ "$BUNDLE_ID" != "${{ secrets.APP_ID }}" ]; then
-            echo "⚠️  Bundle ID mismatch:"
-            echo "   Info.plist: $BUNDLE_ID"
-            echo "   APP_ID secret: ${{ secrets.APP_ID }}"
-            echo "   This might cause signing issues"
-          else
-            echo "✅ Bundle ID matches APP_ID secret"
-          fi
-          
-          echo "✅ iOS project structure looks good"
-
-      - name: 🔐 Setup Apple API Key
-        run: |
-          echo "🔐 Setting up Apple API authentication..."
-          
-          # Create private_keys directory
+          # Create private_keys directory and .p8 file
           mkdir -p private_keys
-          
-          # Create the .p8 file with proper formatting
           echo "${{ secrets.APPLE_API_PRIVATE_KEY }}" | tr -d '\r' | sed 's/\\n/\n/g' > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
-          
-          # Verify the file was created
-          if [ ! -f "private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8" ]; then
-            echo "❌ Failed to create .p8 file"
-            exit 1
-          fi
-          
-          # Check file size (should be reasonable, not tiny)
-          FILE_SIZE=$(wc -c < private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8)
-          echo "📊 .p8 file size: ${FILE_SIZE} bytes"
-          
-          if [ "$FILE_SIZE" -lt 200 ]; then
-            echo "❌ .p8 file appears to be too small (${FILE_SIZE} bytes)"
-            echo "   Expected: 450-600 bytes for a valid key"
-            echo "   This suggests the APPLE_API_PRIVATE_KEY secret might be truncated"
-            exit 1
-          fi
-          
-          # Verify file format
-          if ! grep -q "^-----BEGIN PRIVATE KEY-----$" private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8; then
-            echo "⚠️  .p8 file missing proper BEGIN marker, attempting to fix..."
-            
-            # Try to fix malformed file
-            echo "-----BEGIN PRIVATE KEY-----" > temp_file
-            grep -v "BEGIN\|END" private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 | tr -d '\n' | fold -w 64 >> temp_file
-            echo "-----END PRIVATE KEY-----" >> temp_file
-            mv temp_file private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
-            
-            echo "🔧 Applied automatic formatting fix"
-          fi
-          
-          if ! grep -q "^-----END PRIVATE KEY-----$" private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8; then
-            echo "❌ .p8 file missing proper END marker"
-            echo "   First line: $(head -n1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8)"
-            echo "   Last line:  $(tail -n1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8)"
-            exit 1
-          fi
-          
-          # Validate with OpenSSL
-          if command -v openssl >/dev/null 2>&1; then
-            if openssl pkey -in private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 -noout 2>/dev/null; then
-              echo "✅ .p8 file validation passed"
-            else
-              echo "❌ .p8 file failed OpenSSL validation"
-              echo "   This indicates the private key format is invalid"
-              exit 1
-            fi
-          else
-            echo "⚠️  OpenSSL not available for validation"
-          fi
-          
-          # Set secure permissions
           chmod 600 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
-          
-          echo "✅ Apple API key setup complete"
+          echo "✅ Apple API key file created."
 
-      - name: 📦 Install Dependencies
+      - name: 📦 Install Flutter & iOS Dependencies
         run: |
-          echo "📦 Installing Flutter dependencies..."
           flutter pub get
-          
-          
-          echo "✅ Dependencies installed successfully"
+          cd ios && pod install --repo-update && cd ..
+          echo "✅ Dependencies installed."
 
-      - name: 🧹 Clean Project
+      - name: 🧹 Clean & Prepare Build
         run: |
-          echo "🧹 Cleaning Flutter project..."
           flutter clean
           flutter pub get
-          
-          echo "✅ Project cleaned successfully"
-
-      - name: 🔧 Prepare Build Environment
-        run: |
-          echo "🔧 Preparing build environment..."
-          
-          # Determine build number
-          if [ -n "${{ github.event.inputs.build_number }}" ]; then
-            BUILD_NUMBER="${{ github.event.inputs.build_number }}"
-            echo "📱 Using custom build number: $BUILD_NUMBER"
-          else
-            # Generate build number from timestamp and run number
-            BUILD_NUMBER="$(date +%Y%m%d).${GITHUB_RUN_NUMBER}"
-            echo "📱 Generated build number: $BUILD_NUMBER"
-          fi
-          
-          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
-          
-          # Set version name
+          # Determine build number (custom input or timestamp.run_number)
+          BUILD_NUMBER="${{ github.event.inputs.build_number || format('{0}.{1}', github.run_number, github.run_attempt) }}"
           VERSION_NAME=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
-          echo "📱 Version name: $VERSION_NAME"
-          
-          echo "✅ Build environment prepared"
+          echo "📱 Building app version: ${VERSION_NAME} (Build: ${BUILD_NUMBER})"
+          echo "✅ Build environment prepared."
 
-      - name: 🏗️ Build iOS App
+      - name: 🏗️ Build iOS Archive
         run: |
-          echo "🏗️ Building iOS app..."
-          
-          # Build the iOS app with release configuration
-          flutter build ios \
-            --release \
-            --no-codesign \
+          flutter build ios --release --no-codesign \
             --build-number="$BUILD_NUMBER" \
             --build-name="$VERSION_NAME"
-          
-          echo "✅ iOS app built successfully"
 
-      - name: 📱 Archive and Export IPA
-        run: |
-          echo "📱 Creating iOS archive..."
-          
-          # Set up authentication parameters
           AUTH_KEY_PATH="$PWD/private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8"
-          
+
           # Archive the app
           xcodebuild \
             -workspace ios/Runner.xcworkspace \
@@ -263,11 +107,12 @@ jobs:
             -authenticationKeyID "${{ secrets.API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ISSUER_ID }}" \
             clean archive
-          
-          echo "✅ Archive created successfully"
-          
-          echo "📤 Exporting IPA for App Store..."
-          
+          echo "✅ iOS app archived successfully."
+
+      - name: 📤 Export IPA
+        run: |
+          AUTH_KEY_PATH="$PWD/private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8"
+
           # Create export options plist
           cat > build/ios/archive/ExportOptions.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -277,7 +122,7 @@ jobs:
               <key>method</key>
               <string>app-store</string>
               <key>teamID</key>
-              <string>TEAM_ID_PLACEHOLDER</string>
+              <string>${{ secrets.TEAM_ID }}</string> # Make sure TEAM_ID is set as a secret or derived
               <key>uploadBitcode</key>
               <false/>
               <key>uploadSymbols</key>
@@ -300,25 +145,17 @@ jobs:
             -authenticationKeyPath "$AUTH_KEY_PATH" \
             -authenticationKeyID "${{ secrets.API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ISSUER_ID }}"
-          
-          echo "✅ IPA exported successfully"
+          echo "✅ IPA exported successfully."
 
       - name: 🚀 Upload to TestFlight
         run: |
-          echo "🚀 Uploading to TestFlight..."
-          
-          # Find the IPA file
           IPA_PATH=$(find build/ios/ipa -name "*.ipa" | head -n 1)
-          
           if [ -z "$IPA_PATH" ]; then
-            echo "❌ No IPA file found in build/ios/ipa"
-            ls -la build/ios/ipa/
+            echo "❌ No IPA file found for upload."
             exit 1
           fi
-          
-          echo "📱 IPA file: $IPA_PATH"
-          
-          # Upload to TestFlight using altool
+          echo "📱 Found IPA: $IPA_PATH"
+
           xcrun altool \
             --upload-app \
             --type ios \
@@ -326,55 +163,12 @@ jobs:
             --apiKey "${{ secrets.API_KEY_ID }}" \
             --apiIssuer "${{ secrets.ISSUER_ID }}" \
             --verbose
-          
-          echo "✅ Upload to TestFlight completed!"
-          
-          echo "🎉 Build Information:"
-          echo "   App: ${{ secrets.APP_ID }}"
-          echo "   Version: $VERSION_NAME"
-          echo "   Build: $BUILD_NUMBER"
-          echo "   Environment: ${{ github.event.inputs.environment || 'production' }}"
-          echo ""
-          echo "📱 Check your build in App Store Connect:"
-          echo "   https://appstoreconnect.apple.com/apps/${{ secrets.APP_ID }}/testflight"
+          echo "🎉 Upload to TestFlight completed! Check App Store Connect for processing: https://appstoreconnect.apple.com/apps/${{ secrets.APP_ID }}/testflight"
 
-      - name: 📊 Build Summary
-        if: always()
-        run: |
-          echo "📊 Build Summary"
-          echo "==============="
-          echo "Status: ${{ job.status }}"
-          echo "Workflow: ${{ github.workflow }}"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Run Number: ${{ github.run_number }}"
-          echo "Actor: ${{ github.actor }}"
-          echo "Event: ${{ github.event_name }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "SHA: ${{ github.sha }}"
-          echo ""
-          echo "📱 App Information:"
-          echo "Bundle ID: ${{ secrets.APP_ID }}"
-          echo "Version: ${VERSION_NAME:-'unknown'}"
-          echo "Build: ${BUILD_NUMBER:-'unknown'}"
-          echo ""
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "🎉 Deployment completed successfully!"
-            echo "   Your app is now processing in TestFlight"
-            echo "   It should be available for testing within 10-30 minutes"
-          else
-            echo "❌ Deployment failed"
-            echo "   Please check the logs above for specific error messages"
-            echo "   Common issues:"
-            echo "   - Invalid .p8 file format"
-            echo "   - Bundle ID mismatch"
-            echo "   - Missing App Store Connect app"
-            echo "   - Insufficient API key permissions"
-          fi
-
-      - name: 🧹 Cleanup
+      - name: 🧹 Clean up Sensitive Files
         if: always()
         run: |
           echo "🧹 Cleaning up sensitive files..."
           rm -rf private_keys/
           rm -f build/ios/archive/ExportOptions.plist
-          echo "✅ Cleanup completed"
+          echo "✅ Cleanup complete."
