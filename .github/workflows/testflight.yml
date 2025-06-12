@@ -21,7 +21,7 @@ on:
           - staging
 
 env:
-  FLUTTER_VERSION: '3.24.3' # Adjust as needed
+  FLUTTER_VERSION: '3.32.3' # Adjust as needed
   XCODE_VERSION: '15.2'    # Adjust as needed
 
 jobs:
@@ -35,6 +35,172 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: 🔍 Validate All Variables & Secrets
+        run: |
+          echo "🔍 Validating environment variables and secrets..."
+          echo "==========================================="
+          
+          # Environment Variables
+          echo "📋 Environment Variables:"
+          echo "  FLUTTER_VERSION: ${{ env.FLUTTER_VERSION }}"
+          echo "  XCODE_VERSION: ${{ env.XCODE_VERSION }}"
+          echo "  GitHub Run Number: ${{ github.run_number }}"
+          echo "  GitHub Run Attempt: ${{ github.run_attempt }}"
+          
+          # Check for required secrets (without revealing values)
+          echo ""
+          echo "🔐 Secret Validation:"
+          
+          MISSING_SECRETS=()
+          
+          if [ -z "${{ secrets.APPLE_API_PRIVATE_KEY }}" ]; then
+            echo "  ❌ APPLE_API_PRIVATE_KEY: Missing"
+            MISSING_SECRETS+=("APPLE_API_PRIVATE_KEY")
+          else
+            echo "  ✅ APPLE_API_PRIVATE_KEY: Present (${#{{ secrets.APPLE_API_PRIVATE_KEY }}} chars)"
+            # Check if it looks like a valid private key
+            if [[ "${{ secrets.APPLE_API_PRIVATE_KEY }}" == *"BEGIN PRIVATE KEY"* ]]; then
+              echo "     🔑 Format: Valid private key detected"
+            else
+              echo "     ⚠️ Format: May not be a valid private key"
+            fi
+          fi
+          
+          if [ -z "${{ secrets.API_KEY_ID }}" ]; then
+            echo "  ❌ API_KEY_ID: Missing"
+            MISSING_SECRETS+=("API_KEY_ID")
+          else
+            KEY_ID_LENGTH=${#{{ secrets.API_KEY_ID }}}
+            echo "  ✅ API_KEY_ID: Present ($KEY_ID_LENGTH chars)"
+            if [ $KEY_ID_LENGTH -eq 10 ]; then
+              echo "     📏 Length: Correct (10 characters)"
+            else
+              echo "     ⚠️ Length: Expected 10 characters, got $KEY_ID_LENGTH"
+            fi
+          fi
+          
+          if [ -z "${{ secrets.ISSUER_ID }}" ]; then
+            echo "  ❌ ISSUER_ID: Missing"
+            MISSING_SECRETS+=("ISSUER_ID")
+          else
+            ISSUER_LENGTH=${#{{ secrets.ISSUER_ID }}}
+            echo "  ✅ ISSUER_ID: Present ($ISSUER_LENGTH chars)"
+            if [[ "${{ secrets.ISSUER_ID }}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+              echo "     🆔 Format: Valid UUID format"
+            else
+              echo "     ⚠️ Format: Should be UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+            fi
+          fi
+          
+          if [ -z "${{ secrets.TEAM_ID }}" ]; then
+            echo "  ❌ TEAM_ID: Missing"
+            MISSING_SECRETS+=("TEAM_ID")
+          else
+            TEAM_ID_LENGTH=${#{{ secrets.TEAM_ID }}}
+            echo "  ✅ TEAM_ID: Present ($TEAM_ID_LENGTH chars)"
+            if [ $TEAM_ID_LENGTH -eq 10 ]; then
+              echo "     📏 Length: Correct (10 characters)"
+            else
+              echo "     ⚠️ Length: Expected 10 characters, got $TEAM_ID_LENGTH"
+            fi
+          fi
+          
+          if [ -z "${{ secrets.APP_ID }}" ]; then
+            echo "  ❌ APP_ID: Missing"
+            MISSING_SECRETS+=("APP_ID")
+          else
+            echo "  ✅ APP_ID: Present (${{ secrets.APP_ID }})"
+            if [[ "${{ secrets.APP_ID }}" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z0-9.-]+$ ]]; then
+              echo "     📱 Format: Valid bundle identifier format"
+            else
+              echo "     ⚠️ Format: Should be reverse domain format (com.company.app)"
+            fi
+          fi
+          
+          # Check workflow inputs
+          echo ""
+          echo "⚙️ Workflow Inputs:"
+          if [ -n "${{ github.event.inputs.build_number }}" ]; then
+            echo "  📋 Custom Build Number: ${{ github.event.inputs.build_number }}"
+          else
+            BUILD_NUMBER="${{ format('{0}.{1}', github.run_number, github.run_attempt) }}"
+            echo "  📋 Auto Build Number: $BUILD_NUMBER"
+          fi
+          echo "  🌍 Environment: ${{ github.event.inputs.environment || 'production' }}"
+          
+          # Project structure validation
+          echo ""
+          echo "📁 Project Structure:"
+          MISSING_FILES=()
+          
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "  ❌ pubspec.yaml: Missing"
+            MISSING_FILES+=("pubspec.yaml")
+          else
+            echo "  ✅ pubspec.yaml: Found"
+            # Extract app version
+            APP_VERSION=$(grep '^version: ' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1 || echo "unknown")
+            echo "     📱 App Version: $APP_VERSION"
+          fi
+          
+          if [ ! -f "ios/Runner/Info.plist" ]; then
+            echo "  ❌ ios/Runner/Info.plist: Missing"
+            MISSING_FILES+=("ios/Runner/Info.plist")
+          else
+            echo "  ✅ ios/Runner/Info.plist: Found"
+            # Extract bundle ID from plist
+            if command -v plutil > /dev/null 2>&1; then
+              PLIST_BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw ios/Runner/Info.plist 2>/dev/null || echo "unknown")
+              echo "     📱 Bundle ID in plist: $PLIST_BUNDLE_ID"
+              
+              # Check if APP_ID matches plist bundle ID
+              if [ -n "${{ secrets.APP_ID }}" ] && [ "$PLIST_BUNDLE_ID" != "${{ secrets.APP_ID }}" ]; then
+                echo "     ⚠️ Warning: APP_ID secret (${{ secrets.APP_ID }}) doesn't match plist ($PLIST_BUNDLE_ID)"
+              fi
+            fi
+          fi
+          
+          if [ ! -d "ios" ]; then
+            echo "  ❌ ios/: Missing"
+            MISSING_FILES+=("ios/")
+          else
+            echo "  ✅ ios/: Found"
+          fi
+          
+          if [ ! -f "ios/Podfile" ]; then
+            echo "  ⚠️ ios/Podfile: Missing (might be needed)"
+          else
+            echo "  ✅ ios/Podfile: Found"
+          fi
+          
+          # Final validation summary
+          echo ""
+          echo "📊 Validation Summary:"
+          echo "====================="
+          
+          if [ ${#MISSING_SECRETS[@]} -eq 0 ]; then
+            echo "✅ All required secrets are present"
+          else
+            echo "❌ Missing secrets: ${MISSING_SECRETS[*]}"
+            echo "   Please add these secrets in GitHub Settings > Secrets and variables > Actions"
+          fi
+          
+          if [ ${#MISSING_FILES[@]} -eq 0 ]; then
+            echo "✅ All required project files are present"
+          else
+            echo "❌ Missing project files: ${MISSING_FILES[*]}"
+          fi
+          
+          # Exit if critical issues found
+          if [ ${#MISSING_SECRETS[@]} -ne 0 ] || [ ${#MISSING_FILES[@]} -ne 0 ]; then
+            echo ""
+            echo "❌ VALIDATION FAILED - Cannot proceed with deployment"
+            echo "   Please fix the issues above and try again."
+            exit 1
+          fi
+          
+          echo "✅ VALIDATION PASSED - Ready to proceed with deployment"
 
       - name: 🔧 Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
