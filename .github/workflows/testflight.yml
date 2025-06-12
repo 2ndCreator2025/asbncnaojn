@@ -97,20 +97,6 @@ jobs:
             fi
           fi
           
-          if [ -z "${{ secrets.TEAM_ID }}" ]; then
-            echo "  ❌ TEAM_ID: Missing"
-            MISSING_SECRETS+=("TEAM_ID")
-          else
-            TEAM_VALUE="${{ secrets.TEAM_ID }}"
-            TEAM_ID_LENGTH=${#TEAM_VALUE}
-            echo "  ✅ TEAM_ID: Present ($TEAM_ID_LENGTH chars)"
-            if [ $TEAM_ID_LENGTH -eq 10 ]; then
-              echo "     📏 Length: Correct (10 characters)"
-            else
-              echo "     ⚠️ Length: Expected 10 characters, got $TEAM_ID_LENGTH"
-            fi
-          fi
-          
           if [ -z "${{ secrets.APP_ID }}" ]; then
             echo "  ❌ APP_ID: Missing"
             MISSING_SECRETS+=("APP_ID")
