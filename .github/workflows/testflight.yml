@@ -21,7 +21,7 @@ on:
           - staging
 
 env:
-  FLUTTER_VERSION: '3.32.3' # Adjust as needed
+  FLUTTER_VERSION: '3.24.3' # Adjust as needed
   XCODE_VERSION: '15.2'    # Adjust as needed
 
 jobs:
@@ -65,9 +65,17 @@ jobs:
 
           # Create private_keys directory and .p8 file
           mkdir -p private_keys
-          echo "${{ secrets.APPLE_API_PRIVATE_KEY }}" | tr -d '\r' | sed 's/\\n/\n/g' > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
+          # Properly format the private key with correct newlines
+          echo "${{ secrets.APPLE_API_PRIVATE_KEY }}" | base64 -d > private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
           chmod 600 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8
-          echo "✅ Apple API key file created."
+          
+          # Verify the key file format
+          if head -1 private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8 | grep -q "BEGIN PRIVATE KEY"; then
+            echo "✅ Apple API key file created and verified."
+          else
+            echo "❌ Invalid API key format. Please ensure the key is base64 encoded in secrets."
+            exit 1
+          fi
 
       - name: 📦 Install Flutter & iOS Dependencies
         run: |
@@ -109,6 +117,23 @@ jobs:
             clean archive
           echo "✅ iOS app archived successfully."
 
+      - name: 🎯 Generate JWT Token & Get Team ID
+        run: |
+          cd cli
+          dart pub get
+          cd ..
+          
+          # Generate JWT token using Dart CLI
+          JWT=$(dart run ./cli/bin/cli.dart "${API_KEY_ID}" "${ISSUER_ID}" "private_keys/AuthKey_${API_KEY_ID}.p8")
+          echo "JWT_TOKEN=${JWT}" >> $GITHUB_ENV
+          
+          # Get Team ID from App Store Connect API
+          TEAM_RESPONSE=$(curl -s -H "Authorization: Bearer ${JWT}" "https://api.appstoreconnect.apple.com/v1/bundleIds")
+          TEAM_ID=$(echo "${TEAM_RESPONSE}" | jq -r '.data[0].attributes.seedId')
+          echo "TEAM_ID=${TEAM_ID}" >> $GITHUB_ENV
+          
+          echo "Successfully fetched Team ID: ${TEAM_ID}"
+
       - name: 📤 Export IPA
         run: |
           AUTH_KEY_PATH="$PWD/private_keys/AuthKey_${{ secrets.API_KEY_ID }}.p8"
@@ -122,7 +147,7 @@ jobs:
               <key>method</key>
               <string>app-store</string>
               <key>teamID</key>
-              <string>${{ secrets.TEAM_ID }}</string> # Make sure TEAM_ID is set as a secret or derived
+              <string>${{ env.TEAM_ID }}</string>
               <key>uploadBitcode</key>
               <false/>
               <key>uploadSymbols</key>
